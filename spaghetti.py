@@ -133,20 +133,25 @@ class LSTMNetwork:
 
 
 
-n = LSTMNetwork(2, [2,2], 3, 2)
 
-time = 100
-coll = np.zeros((n.nUnits + n.outDim*2, time))
 
-sequence = [0] + [np.random.randint(1,10) for i in range(10)] + [0]
-inp = lambda t: 
-tar = lambda t: np.array([[np.sin(t+1), np.sin(t+1.5)]]).T
 
+def toCat(i, base):
+    return [1 if b == i else 0 for b in range(base)]
+
+base = 10
+sequence = [0] + [np.random.randint(1,base) for i in range(10)] + [0]
+print(sequence)
+sequence = [toCat(s,base) for s in sequence]
+sequence = np.array(sequence).T
+
+n = LSTMNetwork(base, [2,2], 3, base)
+time = 10
 for t in range(time):
-    state, out = n.run(inp(t),tar(t))
-    coll[0:-n.outDim*2,t] = state[:,0]
-    coll[-n.outDim*2:-n.outDim,t] = tar(t)[:,0]
-    coll[-n.outDim:,t] = out[:,0]
-
-plt.matshow(coll)
-plt.show()
+    coll = np.zeros((n.nUnits, len(sequence)-1))
+    for i in range(len(sequence)-1):
+        # the None is a dirty hack to keep the array shape (x, 1) while slicing
+        state, out = n.run(sequence[:,i,None],sequence[:,i+1,None])
+        coll[:,i] = state[:,0]
+    plt.matshow(coll)
+    plt.show()
