@@ -6,12 +6,20 @@ from matplotlib import pyplot as plt
 def logisticSigmoid(x):
 	return 1.0/(1.0 + np.exp(-x))
 
+def derivSig(x):
+    return np.multiply(logisticSigmoid(x), (1 - logisticSigmoid(x)))
+
 def h(x):
 	return 2.0/(1.0 + np.exp(-x)) - 1
+
+def derivH(x):
+    return 2*derivSig(x)
 
 def g(x):
 	return 4.0/(1.0 + np.exp(-x)) - 2
 
+def derivG(x):
+    return 4*derivSig(x)
 
 class LSTMNetwork:
     def __init__(self, inDim, blockSizes, nHiddenUnits, outDim):
@@ -21,6 +29,7 @@ class LSTMNetwork:
         self.nHiddenUnits = nHiddenUnits
         self.outDim = outDim
         self.nUnits = self.inDim + self.nHiddenUnits + sum([n+2 for n in self.blockSizes])
+        self.nBlocks = len(self.blocks)
 
         self.hiddenW = np.random.rand(self.nHiddenUnits, self.nUnits) * 0.4 - 0.2
         self.inGatesW = [np.random.rand(1, self.nUnits) * 0.4 - 0.2 for n in self.blocks]
@@ -37,8 +46,9 @@ class LSTMNetwork:
         self.networkState = np.random.rand(self.nUnits, 1)
         self.cellStates = [np.random.rand(n,1) for n in self.blockSizes]
 
-    def update(self, inp):
+    def run(self, inp, target):
 
+        # forward pass
         netHidden = self.hiddenW @ self.networkState
         yHidden = logisticSigmoid(netHidden + self.hiddenB)
 
@@ -63,89 +73,80 @@ class LSTMNetwork:
                 np.concatenate(yCells)
         ))
 
-        self.networkState = newNetworkState
-        return self.networkState
+        inpIdxStart = 0
+        inpIdxStop = hiddenIdxStart = self.inDim
+        hiddenIdxStop = inGatesIdxStart = self.inDim + self.nHiddenUnits
+        inGatesIdxStop = outGatesIdxStart = self.inDim + self.nHiddenUnits + self.nBlocks
+        outGatesIdxStop = cellsIdxStart = self.inDim + self.nHiddenUnits + 2*self.nBlocks
+        cellsIdxStop = self.nUnits
 
-n = LSTMNetwork(2, [2,4,6], 3, 1)
+
+
+
+
+
+        learningRate = 0.2
+
+        err = np.sum(target - yOut)
+
+        outErr = derivSig(netOut) * err
+        deltaOutW = learningRate * (outErr @ self.networkState.T)
+
+        hiddenErr = derivSig(netHidden) * (self.outW[:, hiddenIdxStart:hiddenIdxStop].T @ outErr)
+        deltaHiddenW = learningRate * (hiddenErr @ self.networkState.T)
+
+        blockIdx = 0
+        outGatesErr = []
+        for b, n in enumerate(self.blockSizes):
+            idx = cellsIdxStart + blockIdx
+            cellsErr = (h(self.cellStates[b])).T @ (self.outW[:, idx:idx + n].T @ outErr)
+            outGatesErr.append(derivSig(netsOutGates[b]) * cellsErr)
+            blockIdx += n
+        deltaOutGatesW = [learningRate * (outGatesErr[i] @ self.networkState.T) for i in self.blocks]
+
+        blockIdx = 0
+        statesErr = []
+        for b, n in enumerate(self.blockSizes):
+            idx = cellsIdxStart + blockIdx
+            statesErr.append(derivSig(netsOutGates[b]) * derivH(self.cellStates[b]) * (self.outW[:, idx:idx + n].T @ outErr))
+            blockIdx += n
+
+        derivStateInGatesW = [0 + (g(netsCells[i]) * derivSig(netsInGates[i])) @ self.networkState.T for i in self.blocks]
+        deltaInGatesW = [learningRate * (statesErr[i].T @ derivStateInGatesW[i]) for i in self.blocks]
+
+        derivStateCellW = [0 + (derivG(netsCells[i]) * logisticSigmoid(netsInGates[i])) @ self.networkState.T for i in self.blocks]
+        deltaCellW = [learningRate * statesErr[i] * derivStateCellW[i] for i in self.blocks]
+
+
+
+        self.outW += deltaOutW
+        self.hiddenW += deltaHiddenW
+        self.outGatesW = [self.outGatesW[i] + deltaOutGatesW[i] for i in self.blocks]
+        self.inGatesW = [self.inGatesW[i] + deltaInGatesW[i] for i in self.blocks]
+        self.cellW = [self.cellW[i] + deltaCellW[i] for i in self.blocks]
+
+
+
+        self.networkState = newNetworkState
+        self.cellStates = newCellStates
+        return (self.networkState, yOut)
+
+
+
+n = LSTMNetwork(2, [2,2], 3, 2)
 
 time = 100
-coll = np.zeros((n.nUnits, time))
-inp = lambda t: np.random.rand(2, 1)
+coll = np.zeros((n.nUnits + n.outDim*2, time))
+
+sequence = [0] + [np.random.randint(1,10) for i in range(10)] + [0]
+inp = lambda t: 
+tar = lambda t: np.array([[np.sin(t+1), np.sin(t+1.5)]]).T
+
 for t in range(time):
-    coll[:,t] = n.update(inp(t))[:,0]
+    state, out = n.run(inp(t),tar(t))
+    coll[0:-n.outDim*2,t] = state[:,0]
+    coll[-n.outDim*2:-n.outDim,t] = tar(t)[:,0]
+    coll[-n.outDim:,t] = out[:,0]
 
 plt.matshow(coll)
 plt.show()
-
-
-#
-# inDim = 2
-# blockSizes = [2,4,6]
-# blocks = range(len(blockSizes))
-# nHiddenUnits = 4
-# outDim = 1
-#
-# nUnits = inDim + nHiddenUnits + sum([n+2 for n in blockSizes])
-# unitActivation = np.random.rand(nUnits, 1)
-#
-# hiddenWeights = np.random.rand(nHiddenUnits, nUnits) * 0.4 - 0.2
-# hiddenBiases = np.zeros((nHiddenUnits, 1))
-# def yHidden():
-#     net = hiddenWeights @ unitActivation
-#     return logisticSigmoid(net + hiddenBiases)
-#
-# inGatesWeights = [np.random.rand(1, nUnits) * 0.4 - 0.2 for n in blocks]
-# inGatesBiases = [np.zeros((1,1))]*len(blocks)
-# def yInGates():
-#     nets = [inGatesWeights[i] @ unitActivation for i in blocks]
-#     return [logisticSigmoid(nets[i] + inGatesBiases[i]) for i in blocks]
-#
-# outGatesWeights = [np.random.rand(1, nUnits) * 0.4 - 0.2 for n in blocks]
-# outGatesBiases = [np.array([[-1*(i+1)]]) for i in blocks]
-# def yOutGates():
-#     nets = [outGatesWeights[i] @ unitActivation for i in blocks]
-#     return [logisticSigmoid(nets[i] + outGatesBiases[i]) for i in blocks]
-#
-# cellWeights = [np.random.rand(n, nUnits) * 0.4 - 0.2 for n in blockSizes]
-# states = [np.random.rand(n,1) for n in blockSizes]
-# cellBiases = [np.zeros((n,1)) for n in blockSizes]
-# def yCells():
-#     nets = [cellWeights[i] @ unitActivation for i in blocks]
-#     newStates = [states[i] + yInGates()[i]*g(nets[i] + cellBiases[i]) for i in blocks]
-#     return [yOutGates()[i]*h(newStates[i]) for i in blocks]
-#
-# outWeights = np.random.rand(outDim, nUnits) * 0.4 - 0.2
-# outBiases = np.zeros((outDim,1))
-# def yOut():
-#     net = outWeights @ unitActivation
-#     return logisticSigmoid(net + outBiases)
-#
-# def yInp():
-#     return np.random.rand(inDim, 1)
-#
-# steps = 100
-# acColl = np.zeros((nUnits, steps))
-# outColl = np.zeros((outDim, steps))
-# for t in range(steps):
-#     inp = yInp()
-#     hid = yHidden()
-#     inG = yInGates()
-#     inGCat = np.concatenate(inG)
-#     outG = yOutGates()
-#     outGCat = np.concatenate(outG)
-#     c = yCells()
-#     cCat = np.concatenate(c)
-#     out = yOut()
-#
-#     newAc = np.concatenate((inp, hid, inGCat, outGCat, cCat))
-#     acColl[:,t] = newAc[:,0]
-#     unitActivation = newAc
-#
-#     outColl[:,t] = out[:,0]
-#
-#
-#
-# plt.matshow(acColl, cmap=plt.cm.gray)
-# plt.matshow(outColl, cmap=plt.cm.gray)
-#
-# plt.show()
