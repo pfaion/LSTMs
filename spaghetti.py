@@ -135,23 +135,54 @@ class LSTMNetwork:
 
 
 
+def generateSequences(n_sequences, seqLen, n_numbers):
+    indicator = 0
+    numbers = range(1,n_numbers)
+    sequences = []
+    for _ in range(n_sequences):
+        memNum = np.random.choice(numbers)
+        restNums = [n for n in numbers if n != memNum]
+        length = np.random.randint(seqLen[0], seqLen[1])
+        randomPart = [np.random.choice(restNums) for _ in range(length)]
+        seq = [memNum] + randomPart + [indicator] + [memNum]
+        sequences.append(seq)
+    return sequences
 
-def toCat(i, base):
-    return [1 if b == i else 0 for b in range(base)]
+def seqsToCategoricalAndNumpy(seqs):
+    newSeqs = []
+    for seq in seqs:
+        maxN = max(seq)
+        newSeq = []
+        for n in seq:
+            catVec = [1 if i == n else 0 for i in range(maxN+1)]
+            newSeq.append(catVec)
+        newSeq = np.array(newSeq)
+        newSeqs.append(newSeq)
+    return newSeqs
 
-base = 10
-sequence = [0] + [np.random.randint(1,base) for i in range(10)] + [0]
-print(sequence)
-sequence = [toCat(s,base) for s in sequence]
-sequence = np.array(sequence).T
 
-n = LSTMNetwork(base, [2,2], 3, base)
-time = 10
-for t in range(time):
-    coll = np.zeros((n.nUnits, len(sequence)-1))
-    for i in range(len(sequence)-1):
-        # the None is a dirty hack to keep the array shape (x, 1) while slicing
-        state, out = n.run(sequence[:,i,None],sequence[:,i+1,None])
-        coll[:,i] = state[:,0]
-    plt.matshow(coll)
-    plt.show()
+
+
+sequences = generateSequences(1, [3,5], 10)
+sequences = seqsToCategoricalAndNumpy(sequences)
+
+#
+# def toCat(i, base):
+#     return [1 if b == i else 0 for b in range(base)]
+#
+# base = 10
+# sequence = [0] + [np.random.randint(2,base) for i in range(10)] + [0]
+# print(sequence)
+# sequence = [toCat(s,base) for s in sequence]
+# sequence = np.array(sequence).T
+#
+# n = LSTMNetwork(base, [2,2], 3, base)
+# time = 10
+# for t in range(time):
+#     coll = np.zeros((n.nUnits, len(sequence)-1))
+#     for i in range(len(sequence)-1):
+#         # the None is a dirty hack to keep the array shape (x, 1) while slicing
+#         state, out = n.run(sequence[:,i,None],sequence[:,i+1,None])
+#         coll[:,i] = state[:,0]
+#     plt.matshow(coll)
+#     plt.show()
